@@ -18,7 +18,7 @@ class RendererSettings {
 
 export class Renderer {
   private _canvas: HTMLCanvasElement;
-  private _gui: GUI;
+  //private _gui: GUI;
   private _context: GPUCanvasContext;
   private _device: GPUDevice;
   private _settings: RendererSettings;
@@ -218,7 +218,7 @@ export class Renderer {
    */
   private constructor(device: GPUDevice) {
     this._device = device;
-    this._gui = new GUI();
+    //this._gui = new GUI();
     this._settings = new RendererSettings();
 
     const appElement = document.querySelector<HTMLDivElement>("#app")!;

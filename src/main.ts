@@ -1,8 +1,7 @@
 import "./style.css";
 import { Renderer } from "./renderer/renderer";
 
-
-const renderer = (await Renderer.init())
+(await Renderer.init())
 .setupRenderPipeline();
 
 
