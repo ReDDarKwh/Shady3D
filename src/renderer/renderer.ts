@@ -1,4 +1,4 @@
-import { GUI } from "dat.gui";
+//import { GUI } from "dat.gui";
 import Camera, { WASDCamera } from "./camera";
 import { Mat4, mat4, vec3 } from "wgpu-matrix";
 import { InputHandler, createInputHandler } from "./input";
