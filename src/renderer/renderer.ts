@@ -5,15 +5,137 @@ import { InputHandler, createInputHandler } from "./input";
 import {
   cubePositionOffset,
   cubeUVOffset,
-  cubeVertexArray,
   cubeVertexCount,
   cubeVertexSize,
 } from "./meshes/cube";
 import { BasicShader } from "./shaders/basic";
+import { Node3D } from "./node3D";
 
 class RendererSettings {
   initialCameraPosition = vec3.create(2, 2, 2);
   initialCameraTarget = vec3.create(0, 0, 0);
+  maxObjects = 10;
+}
+
+abstract class Pipeline {
+  private _pipeline: GPURenderPipeline;
+  private _renderPassDescriptor: any;
+  private _context: GPUCanvasContext;
+
+  ApplyPipeline(encoder: GPUCommandEncoder) {
+    this._renderPassDescriptor.colorAttachments[0].view = this._context
+      .getCurrentTexture()
+      .createView();
+
+    const passEncoder = encoder.beginRenderPass(this._renderPassDescriptor);
+    passEncoder.setPipeline(this._pipeline);
+
+    return passEncoder;
+  }
+
+  /**
+   *
+   */
+  constructor({
+    pipeline,
+    renderPassDescriptor,
+    context,
+  }: {
+    pipeline: GPURenderPipeline;
+    renderPassDescriptor: any;
+    context: GPUCanvasContext;
+  }) {
+    this._pipeline = pipeline;
+    this._renderPassDescriptor = renderPassDescriptor;
+    this._context = context;
+  }
+}
+
+class ForwardRenderPipeline extends Pipeline {
+  /**
+   *
+   */
+  constructor({
+    device,
+    format,
+    context,
+  }: {
+    device: GPUDevice;
+    format: GPUTextureFormat;
+    context: GPUCanvasContext;
+  }) {
+    const shader = new BasicShader(device);
+
+    const depthTexture = device.createTexture({
+      size: [context.canvas.width, context.canvas.height],
+      format: "depth24plus",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    super({
+      pipeline: device.createRenderPipeline({
+        layout: "auto",
+        vertex: {
+          module: shader.module,
+          entryPoint: "vertex_main",
+          buffers: [
+            {
+              arrayStride: cubeVertexSize,
+              attributes: [
+                {
+                  // position
+                  shaderLocation: 0,
+                  offset: cubePositionOffset,
+                  format: "float32x4",
+                },
+                {
+                  // uv
+                  shaderLocation: 1,
+                  offset: cubeUVOffset,
+                  format: "float32x2",
+                },
+              ],
+            },
+          ],
+        },
+        fragment: {
+          module: shader.module,
+          entryPoint: "fragment_main",
+          targets: [
+            {
+              format,
+            },
+          ],
+        },
+        primitive: {
+          topology: "triangle-list",
+          cullMode: "back",
+        },
+        depthStencil: {
+          depthWriteEnabled: true,
+          depthCompare: "less",
+          format: "depth24plus",
+        },
+      }),
+      renderPassDescriptor: {
+        colorAttachments: [
+          {
+            view: undefined, // Assigned later
+            clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1.0 },
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
+        depthStencilAttachment: {
+          view: depthTexture.createView(),
+          depthClearValue: 1.0,
+          depthLoadOp: "clear",
+          depthStoreOp: "store",
+        },
+      },
+      context,
+    });
+  }
 }
 
 export class Renderer {
@@ -28,158 +150,28 @@ export class Renderer {
   private _projectionMatrix: Mat4;
   private _modelViewProjectionMatrix: Mat4;
   private _canvasFormat: GPUTextureFormat;
-  private _renderPassDescriptor: any;
-  private _uniformBindGroup: GPUBindGroup | undefined;
-  private _pipeline: GPURenderPipeline | undefined;
-  private _uniformBuffer: GPUBuffer | undefined;
-  private _verticesBuffer: GPUBuffer | undefined;
+  private _uniformBindGroup?: GPUBindGroup;
+  private _uniformBuffer?: GPUBuffer;
+  private _verticesBuffer?: GPUBuffer;
+  private _scene: Node3D;
+  private _pipeline: Pipeline;
 
-  async setupRenderPipeline() {
-    this._verticesBuffer = this._device.createBuffer({
-      size: cubeVertexArray.byteLength,
-      usage: GPUBufferUsage.VERTEX,
-      mappedAtCreation: true,
-    });
-    new Float32Array(this._verticesBuffer.getMappedRange()).set(
-      cubeVertexArray
-    );
-    this._verticesBuffer.unmap();
+  private _bindGroupLayouts?: { model: GPUBindGroupLayout };
 
-    const cubeWGSL = new BasicShader(this._device);
+  private _modelBG?: GPUBindGroup;
 
-    this._pipeline = this._device.createRenderPipeline({
-      layout: "auto",
-      vertex: {
-        module: cubeWGSL.module,
-        entryPoint: "vertex_main",
-        buffers: [
-          {
-            arrayStride: cubeVertexSize,
-            attributes: [
-              {
-                // position
-                shaderLocation: 0,
-                offset: cubePositionOffset,
-                format: "float32x4",
-              },
-              {
-                // uv
-                shaderLocation: 1,
-                offset: cubeUVOffset,
-                format: "float32x2",
-              },
-            ],
-          },
-        ],
-      },
-      fragment: {
-        module: cubeWGSL.module,
-        entryPoint: "fragment_main",
-        targets: [
-          {
-            format: this._canvasFormat,
-          },
-        ],
-      },
-      primitive: {
-        topology: "triangle-list",
-        cullMode: "back",
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: "less",
-        format: "depth24plus",
-      },
-    });
+  addNodeToScene(node: Node3D) {
+    this._scene.addChild(node);
 
-    const depthTexture = this._device.createTexture({
-      size: [this._canvas.width, this._canvas.height],
-      format: "depth24plus",
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    const uniformBufferSize = 4 * 16; // 4x4 matrix
-    this._uniformBuffer = this._device.createBuffer({
-      size: uniformBufferSize,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Fetch the image and upload it into a GPUTexture.
-    let cubeTexture: GPUTexture;
-    {
-      const response = await fetch("https://i.kym-cdn.com/entries/icons/original/000/022/134/elmo.jpg");
-      const imageBitmap = await createImageBitmap(await response.blob());
-
-      cubeTexture = this._device.createTexture({
-        size: [imageBitmap.width, imageBitmap.height, 1],
-        format: "rgba8unorm",
-        usage:
-          GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.COPY_DST |
-          GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-      this._device.queue.copyExternalImageToTexture(
-        { source: imageBitmap },
-        { texture: cubeTexture },
-        [imageBitmap.width, imageBitmap.height]
-      );
-    }
-
-    // Create a sampler with linear filtering for smooth interpolation.
-    const sampler = this._device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
-    });
-
-    this._uniformBindGroup = this._device.createBindGroup({
-      layout: this._pipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this._uniformBuffer,
-          },
-        },
-        {
-          binding: 1,
-          resource: sampler,
-        },
-        {
-          binding: 2,
-          resource: cubeTexture.createView(),
-        },
-      ],
-    });
-
-    this._renderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: undefined, // Assigned later
-          clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1.0 },
-          loadOp: "clear",
-          storeOp: "store",
-        },
-      ],
-      depthStencilAttachment: {
-        view: depthTexture.createView(),
-
-        depthClearValue: 1.0,
-        depthLoadOp: "clear",
-        depthStoreOp: "store",
-      },
-    };
-
-    requestAnimationFrame(this.renderFrame.bind(this));
+    console.log(this._scene);
   }
 
-  getModelViewProjectionMatrix(deltaTime: number) {
-    const viewMatrix = this._camera.update(deltaTime, this._inputHandler());
-    mat4.multiply(
-      this._projectionMatrix,
-      viewMatrix,
-      this._modelViewProjectionMatrix
-    );
-    return this._modelViewProjectionMatrix as Float32Array;
+  getModelViewProjectionMatrix(model: Mat4, view: Mat4) {
+    return mat4.multiply(this._projectionMatrix, mat4.multiply(view, model));
+  }
+
+  getViewMatrix(deltaTime: number) {
+    return this._camera.update(deltaTime, this._inputHandler());
   }
 
   private renderFrame() {
@@ -187,27 +179,41 @@ export class Renderer {
     const deltaTime = (now - this._lastFrameMS) / 1000;
     this._lastFrameMS = now;
 
+    const nodes = this._scene.getChildren();
+
+    const viewMatrix = this.getViewMatrix(deltaTime);
     const modelViewProjection = this.getModelViewProjectionMatrix(deltaTime);
-    this._device.queue.writeBuffer(
-      this._uniformBuffer!,
-      0,
-      modelViewProjection.buffer,
-      modelViewProjection.byteOffset,
-      modelViewProjection.byteLength
-    );
-    this._renderPassDescriptor.colorAttachments[0].view = this._context
-      .getCurrentTexture()
-      .createView();
+
+    for (let [i,n] of nodes.entries()) {
+      const mvp = this.getModelViewProjectionMatrix(
+        n.worldSpaceTransform,
+        viewMatrix
+      );
+
+
+
+    }
+
+    // this._device.queue.writeBuffer(
+    //   this._uniformBuffer!,
+    //   0,
+    //   modelViewProjection.buffer,
+    //   modelViewProjection.byteOffset,
+    //   modelViewProjection.byteLength
+    // );
 
     const commandEncoder = this._device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginRenderPass(
-      this._renderPassDescriptor
-    );
-    passEncoder.setPipeline(this._pipeline!);
-    passEncoder.setBindGroup(0, this._uniformBindGroup!);
+    const passEncoder = this._pipeline.ApplyPipeline(commandEncoder);
+
     passEncoder.setVertexBuffer(0, this._verticesBuffer!);
-    passEncoder.draw(cubeVertexCount);
+
+    for (let [i] of nodes.entries()) {
+      passEncoder.setBindGroup(0, this._modelBG!, [i * 256]);
+      passEncoder.draw(cubeVertexCount);
+    }
+
     passEncoder.end();
+
     this._device.queue.submit([commandEncoder.finish()]);
 
     requestAnimationFrame(this.renderFrame.bind(this));
@@ -249,10 +255,12 @@ export class Renderer {
 
     this._camera = new WASDCamera({
       position: this._settings.initialCameraPosition,
-      target: this._settings.initialCameraTarget
+      target: this._settings.initialCameraTarget,
     });
 
     this._inputHandler = createInputHandler(window, this._canvas);
+
+    this._scene = new Node3D();
 
     const aspect = this._canvas.width / this._canvas.height;
     this._projectionMatrix = mat4.perspective(
@@ -263,7 +271,55 @@ export class Renderer {
     );
     this._modelViewProjectionMatrix = mat4.create();
 
-    //requestAnimationFrame(this.renderFrame);
+    this._pipeline = new ForwardRenderPipeline({
+      device,
+      format: this._canvasFormat,
+      context: this._context,
+    });
+
+    this.initBindGroupLayouts();
+
+    this.initModelBindGroup();
+
+    this.renderFrame();
+  }
+
+  initModelBindGroup() {
+    const matrixBuffer = this._device.createBuffer({
+      label: "matrix buffer",
+      size: 256 * this._settings.maxObjects,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    this._modelBG = this._device.createBindGroup({
+      layout: this._bindGroupLayouts!.model,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: matrixBuffer,
+          },
+        },
+      ],
+    });
+  }
+
+  initBindGroupLayouts() {
+    this._bindGroupLayouts = {
+      model: this._device.createBindGroupLayout({
+        label: "Model BGL",
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.VERTEX,
+            buffer: {
+              type: "uniform",
+              hasDynamicOffset: true,
+            },
+          },
+        ],
+      }),
+    };
   }
 
   static async init() {
@@ -275,6 +331,8 @@ export class Renderer {
     if (!adapter) {
       throw new Error("No appropriate GPUAdapter found.");
     }
+
+    console.log(adapter.limits);
 
     const device = await adapter.requestDevice();
 

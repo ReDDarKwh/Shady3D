@@ -91,6 +91,7 @@ class CameraBase {
   set position(vec: Vec3) {
     vec3.copy(vec, this.position_);
   }
+  
 }
 
 // WASDCamera is a camera implementation that behaves similar to first-person-shooter PC games.
