@@ -162,6 +162,11 @@ export class Renderer {
   private _bindGroupLayouts: GPUBindGroupLayout[] = [];
   private _modelBG?: GPUBindGroup;
   private _matrixBuffer?: GPUBuffer;
+  private _update?: ((dt: number) => void) | undefined;
+  
+  public set update(value: ((dt: number) => void) | undefined) {
+    this._update = value;
+  }
 
   addNodeToScene(node: Node3D) {
     this._scene.addChild(node);
@@ -182,11 +187,22 @@ export class Renderer {
     const deltaTime = (now - this._lastFrameMS) / 1000;
     this._lastFrameMS = now;
 
+    if(this._update){
+      this._update(deltaTime);
+    }
+
     const nodes = this._scene.getChildren();
 
     const viewMatrix = this.getViewMatrix(deltaTime);
 
+    const commandEncoder = this._device.createCommandEncoder();
+    const passEncoder = this._pipeline.ApplyPipeline(commandEncoder);
+
+    passEncoder.setVertexBuffer(0, this._verticesBuffer!);
+
+    let i = 0;
     for (let n of nodes) {
+      //console.log(n);
       const mvp = this.getModelViewProjectionMatrix(
         n.worldSpaceTransform,
         viewMatrix
@@ -197,18 +213,13 @@ export class Renderer {
         i * this._settings.dynamicUniformBindingOffset,
         mvp
       );
-    }
 
-    const commandEncoder = this._device.createCommandEncoder();
-    const passEncoder = this._pipeline.ApplyPipeline(commandEncoder);
-
-    passEncoder.setVertexBuffer(0, this._verticesBuffer!);
-
-    for (let [i] of nodes.entries()) {
       passEncoder.setBindGroup(0, this._modelBG!, [
         i * this._settings.dynamicUniformBindingOffset,
       ]);
       passEncoder.draw(cubeVertexCount);
+
+      i++;
     }
 
     passEncoder.end();
