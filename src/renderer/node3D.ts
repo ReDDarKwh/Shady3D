@@ -4,12 +4,19 @@ export class Node3D {
   public readonly localTransform: Mat4;
   public readonly worldSpaceTransform: Mat4;
 
+  static currentNum : number = 0; 
+
   private _parent: Node3D | undefined;
-  private _children: Set<Node3D> = new Set<Node3D>();
+  private _childIndexes: Map<number, number> = new Map<number, number>();
+  private _children: Node3D[] = [];
+  private _availableChildArrayIndexed : number[] = [];
+
+  private _id : number;
 
   constructor() {
     this.worldSpaceTransform = mat4.identity();
     this.localTransform = mat4.identity();
+    this._id = Node3D.currentNum ++;
   }
 
   get isRoot(){
@@ -17,23 +24,22 @@ export class Node3D {
   }
 
   getChildren(){
-    return Array.from(this._children);
+    return this._children.values();
   }
 
   addChild(node: Node3D){
     node._parent = this;
-    this._children.add(node);
+    this._children.set(this._id, node);
     node.updateWorldTransform();
   }
 
-  private removeChild(node: Node3D){
-    this._children.add(node);
+  private removeChild(id: number){
+    this._children.delete(id);
   }
 
   destroy(){
-    this._parent!.removeChild(this);
+    this._parent!.removeChild(this._id);
   }
-
 
   set position(vec: Vec3){
     mat4.setTranslation(this.localTransform, vec, this.localTransform);

@@ -14,8 +14,6 @@ export class BasicShader extends Shader {
       }
       
       @group(0) @binding(0) var<uniform> uniforms : Uniforms;
-      @group(0) @binding(1) var mySampler: sampler;
-      @group(0) @binding(2) var myTexture: texture_2d<f32>;
       
       struct VertexOutput {
         @builtin(position) Position : vec4f,
@@ -32,7 +30,7 @@ export class BasicShader extends Shader {
       
       @fragment
       fn fragment_main(@location(0) fragUV: vec2f) -> @location(0) vec4f {
-        return textureSample(myTexture, mySampler, fragUV);
+        return vec4(1,0,0,1);
       }
       `
     );

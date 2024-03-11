@@ -5,6 +5,7 @@ import { InputHandler, createInputHandler } from "./input";
 import {
   cubePositionOffset,
   cubeUVOffset,
+  cubeVertexArray,
   cubeVertexCount,
   cubeVertexSize,
 } from "./meshes/cube";
@@ -15,6 +16,7 @@ class RendererSettings {
   initialCameraPosition = vec3.create(2, 2, 2);
   initialCameraTarget = vec3.create(0, 0, 0);
   maxObjects = 10;
+  dynamicUniformBindingOffset = 256;
 }
 
 abstract class Pipeline {
@@ -59,10 +61,12 @@ class ForwardRenderPipeline extends Pipeline {
     device,
     format,
     context,
+    bindGroupLayouts,
   }: {
     device: GPUDevice;
     format: GPUTextureFormat;
     context: GPUCanvasContext;
+    bindGroupLayouts: GPUBindGroupLayout[];
   }) {
     const shader = new BasicShader(device);
 
@@ -74,7 +78,10 @@ class ForwardRenderPipeline extends Pipeline {
 
     super({
       pipeline: device.createRenderPipeline({
-        layout: "auto",
+        layout: device.createPipelineLayout({
+          label: "render pipeline layout",
+          bindGroupLayouts,
+        }),
         vertex: {
           module: shader.module,
           entryPoint: "vertex_main",
@@ -148,17 +155,13 @@ export class Renderer {
   private _camera: Camera;
   private _inputHandler: InputHandler;
   private _projectionMatrix: Mat4;
-  private _modelViewProjectionMatrix: Mat4;
   private _canvasFormat: GPUTextureFormat;
-  private _uniformBindGroup?: GPUBindGroup;
-  private _uniformBuffer?: GPUBuffer;
   private _verticesBuffer?: GPUBuffer;
   private _scene: Node3D;
   private _pipeline: Pipeline;
-
-  private _bindGroupLayouts?: { model: GPUBindGroupLayout };
-
+  private _bindGroupLayouts: GPUBindGroupLayout[] = [];
   private _modelBG?: GPUBindGroup;
+  private _matrixBuffer?: GPUBuffer;
 
   addNodeToScene(node: Node3D) {
     this._scene.addChild(node);
@@ -182,25 +185,19 @@ export class Renderer {
     const nodes = this._scene.getChildren();
 
     const viewMatrix = this.getViewMatrix(deltaTime);
-    const modelViewProjection = this.getModelViewProjectionMatrix(deltaTime);
 
-    for (let [i,n] of nodes.entries()) {
+    for (let n of nodes) {
       const mvp = this.getModelViewProjectionMatrix(
         n.worldSpaceTransform,
         viewMatrix
+      ) as Float32Array;
+
+      this._device.queue.writeBuffer(
+        this._matrixBuffer!,
+        i * this._settings.dynamicUniformBindingOffset,
+        mvp
       );
-
-
-
     }
-
-    // this._device.queue.writeBuffer(
-    //   this._uniformBuffer!,
-    //   0,
-    //   modelViewProjection.buffer,
-    //   modelViewProjection.byteOffset,
-    //   modelViewProjection.byteLength
-    // );
 
     const commandEncoder = this._device.createCommandEncoder();
     const passEncoder = this._pipeline.ApplyPipeline(commandEncoder);
@@ -208,7 +205,9 @@ export class Renderer {
     passEncoder.setVertexBuffer(0, this._verticesBuffer!);
 
     for (let [i] of nodes.entries()) {
-      passEncoder.setBindGroup(0, this._modelBG!, [i * 256]);
+      passEncoder.setBindGroup(0, this._modelBG!, [
+        i * this._settings.dynamicUniformBindingOffset,
+      ]);
       passEncoder.draw(cubeVertexCount);
     }
 
@@ -269,15 +268,15 @@ export class Renderer {
       1,
       100.0
     );
-    this._modelViewProjectionMatrix = mat4.create();
+
+    this.initBindGroupLayouts();
 
     this._pipeline = new ForwardRenderPipeline({
       device,
       format: this._canvasFormat,
       context: this._context,
+      bindGroupLayouts: this._bindGroupLayouts,
     });
-
-    this.initBindGroupLayouts();
 
     this.initModelBindGroup();
 
@@ -285,19 +284,34 @@ export class Renderer {
   }
 
   initModelBindGroup() {
-    const matrixBuffer = this._device.createBuffer({
+    const bufferSize = this._device.limits.minUniformBufferOffsetAlignment * this._settings.maxObjects;
+
+    this._matrixBuffer = this._device.createBuffer({
       label: "matrix buffer",
-      size: 256 * this._settings.maxObjects,
+      size: bufferSize,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
+    this._verticesBuffer = this._device.createBuffer({
+      size: cubeVertexArray.byteLength,
+      usage: GPUBufferUsage.VERTEX,
+      mappedAtCreation: true,
+    });
+
+    new Float32Array(this._verticesBuffer.getMappedRange()).set(
+      cubeVertexArray
+    );
+
+    this._verticesBuffer.unmap();
+
     this._modelBG = this._device.createBindGroup({
-      layout: this._bindGroupLayouts!.model,
+      layout: this._bindGroupLayouts![0],
       entries: [
         {
           binding: 0,
           resource: {
-            buffer: matrixBuffer,
+            buffer: this._matrixBuffer,
+            size: this._device.limits.minUniformBufferOffsetAlignment,
           },
         },
       ],
@@ -305,8 +319,8 @@ export class Renderer {
   }
 
   initBindGroupLayouts() {
-    this._bindGroupLayouts = {
-      model: this._device.createBindGroupLayout({
+    this._bindGroupLayouts.push(
+      this._device.createBindGroupLayout({
         label: "Model BGL",
         entries: [
           {
@@ -318,8 +332,8 @@ export class Renderer {
             },
           },
         ],
-      }),
-    };
+      })
+    );
   }
 
   static async init() {
