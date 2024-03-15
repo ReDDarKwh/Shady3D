@@ -30,7 +30,7 @@ export class BasicShader extends Shader {
       
       @fragment
       fn fragment_main(@location(0) fragUV: vec2f) -> @location(0) vec4f {
-        return vec4(1,0,0,1);
+        return vec4(0.5,0,0.4,1);
       }
       `
     );

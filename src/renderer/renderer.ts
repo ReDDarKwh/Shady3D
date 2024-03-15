@@ -15,7 +15,7 @@ import { Node3D } from "./node3D";
 class RendererSettings {
   initialCameraPosition = vec3.create(2, 2, 2);
   initialCameraTarget = vec3.create(0, 0, 0);
-  maxObjects = 10;
+  maxObjects = 10000;
   dynamicUniformBindingOffset = 256;
 }
 
@@ -168,10 +168,8 @@ export class Renderer {
     this._update = value;
   }
 
-  addNodeToScene(node: Node3D) {
-    this._scene.addChild(node);
-
-    console.log(this._scene);
+  get scene(){
+    return this._scene;
   }
 
   getModelViewProjectionMatrix(model: Mat4, view: Mat4) {
@@ -202,7 +200,6 @@ export class Renderer {
 
     let i = 0;
     for (let n of nodes) {
-      //console.log(n);
       const mvp = this.getModelViewProjectionMatrix(
         n.worldSpaceTransform,
         viewMatrix

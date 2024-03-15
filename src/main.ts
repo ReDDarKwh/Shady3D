@@ -21,9 +21,28 @@ node2_1.position = vec3.create(0, 0, 10);
 
 node2.addChild(node2_1);
 
-renderer.addNodeToScene(node1);
-renderer.addNodeToScene(node2);
+//renderer.addNodeToScene(node1);
+//renderer.addNodeToScene(node2);
+
+const cubes: Node3D[] = [];
+
+for (let i = 0; i < 2000; i++) {
+  const node = new Node3D();
+  cubes.push(node);
+  renderer.scene.addChild(node);
+}
+
+let time = 0;
 
 renderer.update = (dt) => {
-    node1.rotateY(dt);
+  time += dt;
+  node1.rotateY(dt);
+
+  cubes.forEach((x, i) => {
+    x.position = vec3.create(
+      20,
+      0.01 * i,
+      Math.sin(time + i / cubes.length * 20) * 5
+    );
+  });
 };

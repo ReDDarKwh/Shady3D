@@ -1,15 +1,17 @@
 import { Mat4, Vec3, mat4 } from "wgpu-matrix";
 
 export class Node3D {
-  public readonly localTransform: Mat4;
-  public readonly worldSpaceTransform: Mat4;
+  private _localTransform: Mat4;
+  private _worldSpaceTransform: Mat4;
 
-  private _parent: Node3D | undefined;
+  private _parent?: Node3D;
   private _children: Set<Node3D> = new Set<Node3D>();
 
+  private _hasPendingWorldSpaceUpdate = false;
+
   constructor() {
-    this.worldSpaceTransform = mat4.identity();
-    this.localTransform = mat4.identity();
+    this._worldSpaceTransform = mat4.identity();
+    this._localTransform = mat4.identity();
   }
 
   get isRoot() {
@@ -28,7 +30,7 @@ export class Node3D {
   addChild(node: Node3D) {
     node._parent = this;
     this._children.add(node);
-    node.updateWorldTransform();
+    node.requestWorldTransformUpdate();
   }
 
   private removeChild(node: Node3D) {
@@ -40,49 +42,51 @@ export class Node3D {
   }
 
   rotateY(rad: number){
-    mat4.rotateY(this.localTransform, rad, this.localTransform);
-    this.updateWorldTransform();
+    mat4.rotateY(this._localTransform, rad, this._localTransform);
+    this.requestWorldTransformUpdate();
   }
 
   set position(vec: Vec3) {
-    mat4.setTranslation(this.localTransform, vec, this.localTransform);
-    this.updateWorldTransform();
+    mat4.setTranslation(this._localTransform, vec, this._localTransform);
+    this.requestWorldTransformUpdate();
   }
 
   get position() {
-    return mat4.getTranslation(this.localTransform);
+    return mat4.getTranslation(this._localTransform);
   }
 
-  updateWorldTransform() {
-    if (!this._parent) {
-      return;
-    }
+  get worldSpaceTransform(){
+
+    if(this._hasPendingWorldSpaceUpdate){
+
+      let p : Node3D | undefined = this;
+
+      while(p._parent?._hasPendingWorldSpaceUpdate){
+        p = p?._parent;
+      }
+
+      p.updateWorldTransform();
+    } 
+
+    return this._worldSpaceTransform;
+  }
+
+  requestWorldTransformUpdate() {
+    this._hasPendingWorldSpaceUpdate = true;
+    this._children.forEach((c) => c.requestWorldTransformUpdate());
+  }
+
+  updateWorldTransform(){
+
+    this._hasPendingWorldSpaceUpdate = false;
 
     mat4.multiply(
-      this._parent!.worldSpaceTransform,
-      this.localTransform,
-      this.worldSpaceTransform
+      this._parent!._worldSpaceTransform,
+      this._localTransform,
+      this._worldSpaceTransform
     );
+
     this._children.forEach((c) => c.updateWorldTransform());
   }
+
 }
-
-// class Transform {
-//   private _matrix = mat4.identity();
-
-//   get matrix() {
-//     return this._matrix;
-//   }
-
-//   set matrix(mat: Mat4) {
-//     mat4.copy(mat, this._matrix);
-//   }
-
-//   get position() {
-//     return mat4.getTranslation(this._matrix);
-//   }
-
-//   set position(vec: Vec3) {
-//     mat4.setTranslation(this._matrix, vec, this._matrix);
-//   }
-// }
