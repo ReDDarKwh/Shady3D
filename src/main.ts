@@ -21,8 +21,8 @@ node2_1.position = vec3.create(0, 0, 10);
 
 node2.addChild(node2_1);
 
-//renderer.addNodeToScene(node1);
-//renderer.addNodeToScene(node2);
+renderer.scene.addChild(node1);
+renderer.scene.addChild(node2);
 
 const cubes: Node3D[] = [];
 
@@ -35,7 +35,7 @@ for (let i = 0; i < 2000; i++) {
 let time = 0;
 
 renderer.update = (dt) => {
-  time += dt;
+  //time += dt;
   node1.rotateY(dt);
 
   cubes.forEach((x, i) => {

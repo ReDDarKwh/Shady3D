@@ -135,7 +135,7 @@ export class WASDCamera extends CameraBase implements Camera {
       const position = options.position ?? vec3.create(0, 0, -5);
       const target = options.target ?? vec3.create(0, 0, 0);
       const forward = vec3.normalize(vec3.sub(target, position));
-      console.log(forward);
+      //console.log(forward);
       this.recalculateAngles(forward);
       this.position = position;
     }
@@ -165,7 +165,7 @@ export class WASDCamera extends CameraBase implements Camera {
     // Clamp pitch between [-90° .. +90°] to prevent somersaults.
     this.pitch = clamp(this.pitch, -Math.PI / 2, Math.PI / 2);
 
-    console.log(this.yaw, this.pitch);
+    //console.log(this.yaw, this.pitch);
 
     // Save the current position, as we're about to rebuild the camera matrix.
     const position = vec3.copy(this.position);
