@@ -2,8 +2,9 @@ import "./style.css";
 import { Renderer } from "./renderer/renderer";
 import { Node3D } from "./renderer/node3D";
 import { vec3 } from "wgpu-matrix";
+import { Stats } from "./renderer/stats";
 
-const renderer = await Renderer.init();
+const renderer = await Renderer.init([new Stats()]);
 
 const node1 = new Node3D();
 node1.position = vec3.create(1, 2.01, 0);
@@ -26,7 +27,7 @@ renderer.scene.addChild(node2);
 
 const cubes: Node3D[] = [];
 
-for (let i = 0; i < 2000; i++) {
+for (let i = 0; i < 7000; i++) {
   const node = new Node3D();
   cubes.push(node);
   renderer.scene.addChild(node);

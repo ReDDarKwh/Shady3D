@@ -11,6 +11,8 @@ import {
 } from "./meshes/cube";
 import { BasicShader } from "./shaders/basic";
 import { Node3D } from "./node3D";
+import { Stats } from "./stats";
+import { RendererComponent } from "./RendererComponent";
 
 class RendererSettings {
   initialCameraPosition = vec3.create(2, 2, 2);
@@ -37,6 +39,7 @@ export class Renderer {
   private _update?: ((dt: number) => void) | undefined;
   private _renderPipeline?: GPURenderPipeline;
   private _renderPassDescriptor?: GPURenderPassDescriptor;
+  private _components: RendererComponent[];
 
   public set update(value: ((dt: number) => void) | undefined) {
     this._update = value;
@@ -54,22 +57,27 @@ export class Renderer {
     return this._camera.update(deltaTime, this._inputHandler());
   }
 
-  ApplyPipeline(encoder: GPUCommandEncoder) {
+  applyPipeline(encoder: GPUCommandEncoder) {
     (
       this._renderPassDescriptor!
         .colorAttachments as GPURenderPassColorAttachment[]
     )[0].view = this._context.getCurrentTexture().createView();
 
     const passEncoder = encoder.beginRenderPass(this._renderPassDescriptor!);
+    this._components.forEach((x) =>
+      x.onFinalRenderPassCreated(encoder, passEncoder)
+    );
+
     passEncoder.setPipeline(this._renderPipeline!);
 
     return passEncoder;
   }
 
-  private renderFrame(now:number) {
-
+  private renderFrame(now: number) {
     const deltaTime = (now - this._lastFrameMS) / 1000;
     this._lastFrameMS = now;
+
+    this._components.forEach((x) => x.onRenderStart(deltaTime));
 
     if (this._update) {
       this._update(deltaTime);
@@ -80,7 +88,7 @@ export class Renderer {
     const viewMatrix = this.getViewMatrix(deltaTime);
 
     const commandEncoder = this._device.createCommandEncoder();
-    const passEncoder = this.ApplyPipeline(commandEncoder);
+    const passEncoder = this.applyPipeline(commandEncoder);
 
     passEncoder.setVertexBuffer(0, this._verticesBuffer!);
 
@@ -109,14 +117,17 @@ export class Renderer {
 
     this._device.queue.submit([commandEncoder.finish()]);
 
+    this._components.forEach((x) => x.onRenderEnd());
+
     requestAnimationFrame(this.renderFrame.bind(this));
   }
 
   /**
    *
    */
-  private constructor(device: GPUDevice) {
+  private constructor(device: GPUDevice, components?: RendererComponent[]) {
     this._device = device;
+    this._components = components ?? [];
     this._settings = new RendererSettings();
 
     const appElement = document.querySelector<HTMLDivElement>("#app")!;
@@ -243,7 +254,11 @@ export class Renderer {
         depthLoadOp: "clear",
         depthStoreOp: "store",
       },
-    };
+    } as GPURenderPassDescriptor;
+
+    this._components.forEach((x) =>
+      x.onFinalRenderPassDescriptorCreated(this._renderPassDescriptor!)
+    );
   }
 
   initModelBindGroup() {
@@ -301,7 +316,7 @@ export class Renderer {
     );
   }
 
-  static async init() {
+  static async init(components?: RendererComponent[]) {
     if (!navigator.gpu) {
       throw new Error("WebGPU not supported on this browser.");
     }
@@ -321,6 +336,8 @@ export class Renderer {
       throw new Error("No GPU device found.");
     }
 
-    return new Renderer(device);
+    components?.forEach((x) => x.init(device));
+
+    return new Renderer(device, components);
   }
 }

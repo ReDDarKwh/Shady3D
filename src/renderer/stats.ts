@@ -1,4 +1,5 @@
 import { Pane } from "tweakpane";
+import { RendererComponent } from "./RendererComponent";
 
 function assert(cond: boolean, msg = "") {
   if (!cond) {
@@ -25,25 +26,30 @@ class RollingAverage {
 }
 
 interface StatData {
+  fps: number;
+  cpuMS: number;
   gpuMS: number;
 }
 
-export class Stats {
-  private _device;
-  private _querySet;
-  private _resolveBuffer;
-  private _resultBuffer?: GPUBuffer;
+export class Stats extends RendererComponent {
+  private _querySet!: GPUQuerySet;
+  private _resolveBuffer!: GPUBuffer;
+  private _resultBuffer!: GPUBuffer;
   private _resultBuffers: GPUBuffer[] = [];
   private _state: "free" | "need resolve" | "wait for result" = "free";
-  private _gpuMS: RollingAverage = new RollingAverage();
+
   private _fps: RollingAverage = new RollingAverage();
-  private _jsMS: RollingAverage = new RollingAverage();
+  private _gpuMS: RollingAverage = new RollingAverage();
+  private _cpuMS: RollingAverage = new RollingAverage();
 
-  private _gui: Pane;
-  private _data: StatData = {gpuMS: 0} as StatData;
+  private _gui?: Pane;
+  private _data: StatData = { gpuMS: 0, cpuMS: 0, fps: 0 } as StatData;
 
-  constructor(device: GPUDevice) {
+  private _device!: GPUDevice;
+
+  init(device: GPUDevice): void {
     this._device = device;
+
     this._querySet = device.createQuerySet({
       type: "timestamp",
       count: 2,
@@ -54,71 +60,28 @@ export class Stats {
     });
 
     this._gui = new Pane();
-    
+
     this._gui.addBinding(this._data, "gpuMS", {
-      readonly: true
+      readonly: true,
     });
 
     this._gui.addBinding(this._data, "gpuMS", {
       readonly: true,
       view: "graph",
       min: 0,
-      max: 16
-    });
-  }
-
-  private beginTimestampPass(
-    encoder: GPUCommandEncoder,
-    fnName: string,
-    descriptor: GPUObjectDescriptorBase
-  ) {
-    assert(this._state === "free", "state not free");
-    this._state = "need resolve";
-
-    const pass: GPURenderPassEncoder | GPUComputePassEncoder = (encoder as any)[
-      fnName
-    ]({
-      ...descriptor,
-      ...{
-        timestampWrites: {
-          querySet: this._querySet,
-          beginningOfPassWriteIndex: 0,
-          endOfPassWriteIndex: 1,
-        },
-      },
+      max: 16,
     });
 
-    const resolve = () => this.resolveTiming(encoder);
-    pass.end = (function (origFn) {
-      return function () {
-        origFn.call(this);
-        resolve();
-      };
-    })(pass.end);
+    this._gui.addBinding(this._data, "fps", {
+      readonly: true,
+    });
 
-    return pass;
-  }
-
-  beginRenderPass(
-    encoder: GPUCommandEncoder,
-    descriptor: GPURenderPassDescriptor
-  ) {
-    return this.beginTimestampPass(
-      encoder,
-      "beginRenderPass",
-      descriptor
-    ) as GPURenderPassEncoder;
-  }
-
-  beginComputePass(
-    encoder: GPUCommandEncoder,
-    descriptor: GPUComputePassDescriptor
-  ) {
-    return this.beginTimestampPass(
-      encoder,
-      "beginComputePass",
-      descriptor
-    ) as GPUComputePassEncoder;
+    this._gui.addBinding(this._data, "fps", {
+      readonly: true,
+      view: "graph",
+      min: 0,
+      max: 60,
+    });
   }
 
   private resolveTiming(encoder: GPUCommandEncoder) {
@@ -128,7 +91,7 @@ export class Stats {
     this._resultBuffer =
       this._resultBuffers.pop() ||
       this._device.createBuffer({
-        size: this._resolveBuffer.size,
+        size: this._resolveBuffer!.size,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
       });
 
@@ -136,7 +99,7 @@ export class Stats {
       this._querySet,
       0,
       this._querySet.count,
-      this._resolveBuffer,
+      this._resolveBuffer!,
       0
     );
     encoder.copyBufferToBuffer(
@@ -146,6 +109,39 @@ export class Stats {
       0,
       this._resultBuffer.size
     );
+  }
+
+  override onFinalRenderPassCreated(
+    encoder: GPUCommandEncoder,
+    pass: GPURenderPassEncoder
+  ): void {
+    this._state = "need resolve";
+    const resolve = () => this.resolveTiming(encoder);
+    pass.end = (function (origFn) {
+      return function () {
+        origFn.call(this);
+        resolve();
+      };
+    })(pass.end);
+  }
+
+  override onFinalRenderPassDescriptorCreated(
+    descriptor: GPURenderPassDescriptor
+  ): void {
+    descriptor.timestampWrites = {
+      querySet: this._querySet,
+      beginningOfPassWriteIndex: 0,
+      endOfPassWriteIndex: 1,
+    };
+  }
+
+  override onRenderStart(_dt: number): void {
+    this._fps.addSample(1 / _dt);
+    this._data.fps = this._fps.get();
+  }
+
+  override onRenderEnd(): void {
+    this.getResult().then();
   }
 
   async getResult() {
@@ -160,6 +156,5 @@ export class Stats {
     this._resultBuffers.push(resultBuffer);
     this._gpuMS.addSample(duration / 1000000);
     this._data.gpuMS = this._gpuMS.get();
-    return this._data.gpuMS;
   }
 }
