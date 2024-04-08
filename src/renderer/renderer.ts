@@ -11,8 +11,8 @@ import {
 } from "./meshes/cube";
 import { BasicShader } from "./shaders/basic";
 import { Node3D } from "./node3D";
-import { Stats } from "./stats";
-import { RendererComponent } from "./RendererComponent";
+import { RendererComponent } from "./rendererComponent";
+import { Pane } from "tweakpane";
 
 class RendererSettings {
   initialCameraPosition = vec3.create(2, 2, 2);
@@ -37,9 +37,15 @@ export class Renderer {
   private _modelBG?: GPUBindGroup;
   private _matrixBuffer?: GPUBuffer;
   private _update?: ((dt: number) => void) | undefined;
-  private _renderPipeline?: GPURenderPipeline;
-  private _renderPassDescriptor?: GPURenderPassDescriptor;
   private _components: RendererComponent[];
+
+  private _renderPipeline?: GPURenderPipeline;
+  private _finalRenderPassDescriptor?: GPURenderPassDescriptor;
+
+  private _gui: Pane;
+  public get gui(): Pane {
+    return this._gui;
+  }
 
   public set update(value: ((dt: number) => void) | undefined) {
     this._update = value;
@@ -59,11 +65,13 @@ export class Renderer {
 
   applyPipeline(encoder: GPUCommandEncoder) {
     (
-      this._renderPassDescriptor!
+      this._finalRenderPassDescriptor!
         .colorAttachments as GPURenderPassColorAttachment[]
     )[0].view = this._context.getCurrentTexture().createView();
 
-    const passEncoder = encoder.beginRenderPass(this._renderPassDescriptor!);
+    const passEncoder = encoder.beginRenderPass(
+      this._finalRenderPassDescriptor!
+    );
     this._components.forEach((x) =>
       x.onFinalRenderPassCreated(encoder, passEncoder)
     );
@@ -129,6 +137,7 @@ export class Renderer {
     this._device = device;
     this._components = components ?? [];
     this._settings = new RendererSettings();
+    this._gui = new Pane({ title: "Shady3D", expanded: false });
 
     const appElement = document.querySelector<HTMLDivElement>("#app")!;
     appElement.innerHTML = `
@@ -180,6 +189,8 @@ export class Renderer {
     this.initModelBindGroup();
 
     this.renderFrame(0);
+
+    this._components.forEach((x) => x.onRendererInitiated(this));
   }
 
   initRenderPipeline() {
@@ -239,7 +250,7 @@ export class Renderer {
       },
     });
 
-    this._renderPassDescriptor = {
+    this._finalRenderPassDescriptor = {
       colorAttachments: [
         {
           view: this._context.getCurrentTexture().createView(), // Assigned later
@@ -257,7 +268,7 @@ export class Renderer {
     } as GPURenderPassDescriptor;
 
     this._components.forEach((x) =>
-      x.onFinalRenderPassDescriptorCreated(this._renderPassDescriptor!)
+      x.onFinalRenderPassDescriptorCreated(this._finalRenderPassDescriptor!)
     );
   }
 

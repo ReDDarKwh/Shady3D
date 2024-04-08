@@ -1,5 +1,5 @@
-import { Pane } from "tweakpane";
-import { RendererComponent } from "./RendererComponent";
+import { RendererComponent } from "./rendererComponent";
+import { Renderer } from "./renderer";
 
 function assert(cond: boolean, msg = "") {
   if (!cond) {
@@ -42,41 +42,56 @@ export class Stats extends RendererComponent {
   private _gpuMS: RollingAverage = new RollingAverage();
   private _cpuMS: RollingAverage = new RollingAverage();
 
-  private _gui?: Pane;
   private _data: StatData = { gpuMS: 0, cpuMS: 0, fps: 0 } as StatData;
 
-  private _device!: GPUDevice;
+  private _startFrameTime: number = 0;
 
   init(device: GPUDevice): void {
-    this._device = device;
+    super.init(device);
 
     this._querySet = device.createQuerySet({
       type: "timestamp",
       count: 2,
     });
+
     this._resolveBuffer = device.createBuffer({
       size: this._querySet.count * 8,
       usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
     });
+  }
 
-    this._gui = new Pane();
+  override onRendererInitiated(renderer: Renderer): void {
+    super.onRendererInitiated(renderer);
 
-    this._gui.addBinding(this._data, "gpuMS", {
+    const folder = renderer.gui.addFolder({ title: "Stats" });
+
+    folder.addBinding(this._data, "gpuMS", {
       readonly: true,
     });
 
-    this._gui.addBinding(this._data, "gpuMS", {
+    folder.addBinding(this._data, "gpuMS", {
       readonly: true,
       view: "graph",
       min: 0,
       max: 16,
     });
 
-    this._gui.addBinding(this._data, "fps", {
+    folder.addBinding(this._data, "cpuMS", {
       readonly: true,
     });
 
-    this._gui.addBinding(this._data, "fps", {
+    folder.addBinding(this._data, "cpuMS", {
+      readonly: true,
+      view: "graph",
+      min: 0,
+      max: 32,
+    });
+
+    folder.addBinding(this._data, "fps", {
+      readonly: true,
+    });
+
+    folder.addBinding(this._data, "fps", {
       readonly: true,
       view: "graph",
       min: 0,
@@ -136,12 +151,17 @@ export class Stats extends RendererComponent {
   }
 
   override onRenderStart(_dt: number): void {
+    this._startFrameTime = performance.now();
+
+    if (_dt == 0) return;
     this._fps.addSample(1 / _dt);
     this._data.fps = this._fps.get();
   }
 
   override onRenderEnd(): void {
     this.getResult().then();
+    this._cpuMS.addSample(performance.now() - this._startFrameTime);
+    this._data.cpuMS = this._cpuMS.get();
   }
 
   async getResult() {

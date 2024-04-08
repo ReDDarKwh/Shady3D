@@ -27,7 +27,7 @@ renderer.scene.addChild(node2);
 
 const cubes: Node3D[] = [];
 
-for (let i = 0; i < 7000; i++) {
+for (let i = 0; i < 1000; i++) {
   const node = new Node3D();
   cubes.push(node);
   renderer.scene.addChild(node);
