@@ -47,3 +47,12 @@ renderer.update = (dt) => {
     );
   });
 };
+
+const mesh = await renderer.meshLoader.loadFromUrl('https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf');
+console.log(mesh);
+
+// let loader = new GltfLoader();
+// let uri = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf';
+// let asset = await loader.load(uri);
+// let gltf = asset.gltf;
+// console.log(gltf);

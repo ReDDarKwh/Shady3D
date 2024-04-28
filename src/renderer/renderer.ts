@@ -8,11 +8,14 @@ import {
   cubeVertexArray,
   cubeVertexCount,
   cubeVertexSize,
-} from "./meshes/cube";
+} from "./models/cube";
 import { BasicShader } from "./shaders/basic";
 import { Node3D } from "./node3D";
 import { RendererComponent } from "./rendererComponent";
 import { Pane } from "tweakpane";
+import { TinyGltfWebGpu } from './models/gltf/gltfLoader';
+
+
 
 class RendererSettings {
   initialCameraPosition = vec3.create(2, 2, 2);
@@ -41,6 +44,7 @@ export class Renderer {
 
   private _renderPipeline?: GPURenderPipeline;
   private _finalRenderPassDescriptor?: GPURenderPassDescriptor;
+  public meshLoader: TinyGltfWebGpu; 
 
   private _gui: Pane;
   public get gui(): Pane {
@@ -138,6 +142,7 @@ export class Renderer {
     this._components = components ?? [];
     this._settings = new RendererSettings();
     this._gui = new Pane({ title: "Shady3D", expanded: false });
+    this.meshLoader = new TinyGltfWebGpu(this._device);
 
     const appElement = document.querySelector<HTMLDivElement>("#app")!;
     appElement.innerHTML = `

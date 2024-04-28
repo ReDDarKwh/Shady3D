@@ -12,6 +12,7 @@
   "devDependencies": {
     "@tweakpane/core": "^2.0.3",
     "@webgpu/types": "^0.1.40",
+    "gltf-loader-ts": "^0.3.1",
     "typescript": "^5.2.2",
     "vite": "^5.0.8"
   },
