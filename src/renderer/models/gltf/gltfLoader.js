@@ -513,7 +513,7 @@ export class TinyGltfWebGpu extends TinyGltf {
     switch (componentType) {
       case GL.UNSIGNED_SHORT: return 'uint16';
       case GL.UNSIGNED_INT: return 'uint32';
-      default: return 0;
+      default: return "";
     }
   }
 }

@@ -4,7 +4,10 @@ export class BasicShader extends Shader {
   /**
    *
    */
-  constructor(device: GPUDevice) {
+  constructor(
+    device: GPUDevice,
+    ShaderLocations:  { [key: string]: number }
+  ) {
     super(
       "Basic",
       device,
@@ -15,23 +18,43 @@ export class BasicShader extends Shader {
       
       @group(0) @binding(0) var<uniform> uniforms : Uniforms;
       
+      struct VertexInput {
+        @location(${ShaderLocations.POSITION}) position : vec3f,
+        @location(${ShaderLocations.NORMAL}) normal : vec3f,
+      };
+    
       struct VertexOutput {
-        @builtin(position) Position : vec4f,
-        @location(0) fragUV : vec2f,
-      }
-      
+        @builtin(position) position : vec4f,
+        @location(0) normal : vec3f,
+      };
+
       @vertex
-      fn vertex_main(
-        @location(0) position : vec4f,
-        @location(1) uv : vec2f
-      ) -> VertexOutput {
-        return VertexOutput(uniforms.modelViewProjectionMatrix * position, uv);
+      fn vertexMain(input : VertexInput) -> VertexOutput {
+        var output : VertexOutput;
+
+        output.position = uniforms.modelViewProjectionMatrix * vec4f(input.position, 1);
+        output.normal = (vec4f(input.normal, 0)).xyz;
+
+        return output;
       }
-      
+
+      // Some hardcoded lighting
+      const lightDir = vec3f(0.25, 0.5, 1);
+      const lightColor = vec3f(1);
+      const ambientColor = vec3f(0.1);
+
       @fragment
-      fn fragment_main(@location(0) fragUV: vec2f) -> @location(0) vec4f {
-        return vec4(0.5,0,0.4,1);
+      fn fragmentMain(input : VertexOutput) -> @location(0) vec4f {
+        // An extremely simple directional lighting model, just to give our model some shape.
+        let N = normalize(input.normal);
+        let L = normalize(lightDir);
+        let NDotL = max(dot(N, L), 0.0);
+        let surfaceColor = ambientColor + NDotL;
+
+        return vec4f(surfaceColor, 1);
       }
+
+
       `
     );
   }
