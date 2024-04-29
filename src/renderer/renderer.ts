@@ -48,7 +48,6 @@ export class Renderer {
 
   private _renderPipeline?: GPURenderPipeline;
   private _finalRenderPassDescriptor?: GPURenderPassDescriptor;
-  public meshLoader: TinyGltfWebGpu;
 
   private nodeGpuData = new Map();
   private primitiveGpuData = new Map();
@@ -546,7 +545,7 @@ export class Renderer {
     });
   }
 
-  static async init(components?: RendererComponent[], meshUrl: string) {
+  static async init(components?: RendererComponent[]) {
     if (!navigator.gpu) {
       throw new Error("WebGPU not supported on this browser.");
     }
